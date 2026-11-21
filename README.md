@@ -26,6 +26,8 @@ services:
     tmpfs: [/state]
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    pids_limit: 64
 
   api:
     labels:
