@@ -1,0 +1,54 @@
+name: autoheal-test
+
+# Healthy while /tmp/ok exists. Every start creates it and adds a line to /starts, so a restart
+# heals the container and the test can count how many times it started.
+x-probe: &probe
+  image: busybox:1.37
+  command: [sh, -c, "echo start >> /starts; touch /tmp/ok; while :; do sleep 3600 & wait $$!; done"]
+  stop_grace_period: 1s
+  healthcheck:
+    test: [CMD, test, -f, /tmp/ok]
+    interval: 1s
+    timeout: 2s
+    retries: 2
+
+services:
+  autoheal:
+    build: ..
+    environment:
+      AUTOHEAL_INTERVAL: "2"
+      AUTOHEAL_STOP_TIMEOUT: "1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    network_mode: none
+    read_only: true
+    tmpfs: [/state]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  hung:
+    <<: *probe
+    labels:
+      autoheal: "true"
+
+  unlabelled:
+    <<: *probe
+
+  database:
+    <<: *probe
+
+  dependent:
+    <<: *probe
+    labels:
+      autoheal: "true"
+      autoheal.requires: database
+
+  broken:
+    <<: *probe
+    labels:
+      autoheal: "true"
+    healthcheck:
+      test: [CMD, "false"]
+      interval: 1s
+      timeout: 2s
+      retries: 2
