@@ -1,0 +1,13 @@
+# Proposes the new digest of the pinned base image and newer versions of the actions the build uses.
+# A merged proposal reaches users only with a new version tag.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
