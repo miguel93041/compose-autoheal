@@ -1,6 +1,7 @@
 #!/bin/sh
 # Restarts unhealthy containers labelled autoheal=true, unless a service they require is not healthy
-# itself, and at most AUTOHEAL_MAX_RESTARTS times per AUTOHEAL_WINDOW seconds each.
+# itself, and at most AUTOHEAL_MAX_RESTARTS times per AUTOHEAL_WINDOW seconds each. A container with
+# required services is restarted only when a second pass still finds it unhealthy.
 set -eu
 interval="${AUTOHEAL_INTERVAL:-60}"
 max="${AUTOHEAL_MAX_RESTARTS:-3}"
@@ -39,6 +40,7 @@ pass() {
             esac
         done
         if [ -n "$waiting" ]; then
+            rm -f "$state/$name.due"
             note "$name" "unhealthy, not restarted: waiting for$waiting"
             continue
         fi
@@ -52,21 +54,36 @@ pass() {
             note "$name" "unhealthy, not restarted: $max restarts in the last $window seconds did not fix it"
             continue
         fi
+
+        # A required service may have only just come back. Docker keeps the container unhealthy until
+        # its next check passes, so it gets one more pass to reconnect by itself before a restart.
+        if [ -n "$(label "$id" autoheal.requires)" ] && [ ! -e "$state/$name.due" ]; then
+            touch "$state/$name.due"
+            note "$name" "unhealthy with its required services healthy: restarting on the next pass unless it recovers"
+            continue
+        fi
         echo "$seconds" >> "$state/$name.restarts"
-        rm -f "$state/$name.note"
+        rm -f "$state/$name.note" "$state/$name.due"
         echo "$(now) $name: unhealthy, restarting"
         docker restart -t "$stop_timeout" "$id" > /dev/null || echo "$(now) $name: restart failed"
     done
-    # A container that recovered gets its reason logged again the next time it fails.
-    for file in "$state"/*.note; do
+    # A container that recovered starts afresh the next time it fails: its reason is logged again and
+    # it gets its extra pass again.
+    for file in "$state"/*.note "$state"/*.due; do
         [ -e "$file" ] || continue
-        [ -e "${file%.note}.seen" ] || rm -f "$file"
+        [ -e "${file%.*}.seen" ] || rm -f "$file"
     done
 }
 
 mkdir -p "$state"
-# Only the Compose project this container belongs to; every labelled container when run outside Compose.
+# Only the Compose project this container belongs to, unless AUTOHEAL_ALL_PROJECTS says otherwise;
+# every labelled container when run outside Compose.
 project="$(label "$(hostname)" com.docker.compose.project 2>/dev/null || true)"
+case "${AUTOHEAL_ALL_PROJECTS:-false}" in
+    true) project='' ;;
+    false) ;;
+    *) echo 'AUTOHEAL_ALL_PROJECTS must be true or false.' >&2; exit 1 ;;
+esac
 scope=''
 [ -z "$project" ] || scope="--filter label=com.docker.compose.project=$project"
 echo "$(now) watching ${project:-every project} every $interval seconds"

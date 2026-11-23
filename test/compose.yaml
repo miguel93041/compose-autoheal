@@ -16,8 +16,9 @@ services:
   autoheal:
     build: ..
     environment:
-      AUTOHEAL_INTERVAL: "2"
+      AUTOHEAL_INTERVAL: "6"
       AUTOHEAL_STOP_TIMEOUT: "1"
+      AUTOHEAL_ALL_PROJECTS: ${AUTOHEAL_ALL_PROJECTS:-false}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     network_mode: none

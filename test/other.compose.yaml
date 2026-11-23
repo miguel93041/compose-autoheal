@@ -1,0 +1,15 @@
+name: autoheal-test-other
+
+# A labelled container of another Compose project: left alone unless AUTOHEAL_ALL_PROJECTS is true.
+services:
+  outsider:
+    image: busybox:1.37
+    command: [sh, -c, "echo start >> /starts; touch /tmp/ok; while :; do sleep 3600 & wait $$!; done"]
+    stop_grace_period: 1s
+    labels:
+      autoheal: "true"
+    healthcheck:
+      test: [CMD, test, -f, /tmp/ok]
+      interval: 1s
+      timeout: 2s
+      retries: 2
